@@ -1,0 +1,10 @@
+{
+  "name": "СхемаЛаб",
+  "short_name": "СхемаЛаб",
+  "description": "Інтерактивна лабораторія цифрової схемотехніки",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [{ "src": "/icon-180.png", "sizes": "180x180", "type": "image/png" }]
+}
