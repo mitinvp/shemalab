@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0d10;
+  --color-surface: #14171c;
+  --color-surface-2: #1b1f26;
+  --color-fg: #eceef1;
+  --color-muted: #8b919c;
+  --color-subtle: #6a717c;
+  --color-border: #2a2f38;
+  --color-accent: #c5ced8;
+  --color-accent-fg: #0b0d10;
+  --color-signal: #6ee7b7;
+  --color-signal-dim: #163028;
+  --color-danger: #e8a39b;
+  --color-ok: #8fd9b8;
+
+  --font-sans: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --shadow-border: 0 0 0 1px color-mix(in oklab, var(--color-fg) 10%, transparent);
+  --shadow-border-hover: 0 0 0 1px color-mix(in oklab, var(--color-fg) 16%, transparent);
+  --shadow-inset: inset 0 1px 0 0 color-mix(in oklab, var(--color-fg) 7%, transparent);
+  --shadow-signal: 0 0 10px color-mix(in oklab, var(--color-signal) 38%, transparent);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-micro: 80ms;
+  --motion-quick: 150ms;
+  --motion-fast: 250ms;
+  --motion-slow: 400ms;
+  --motion-scale-modal: 0.96;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html,
+  body,
+  #app {
+    min-height: 100dvh;
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  body {
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer utilities {
+  .lab-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--color-fg) 4.5%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--color-fg) 4.5%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 28px 28px;
+    background-position: center top;
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
