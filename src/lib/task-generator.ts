@@ -51,7 +51,7 @@ export const GENERATED_TASKS_PER_TOPIC = 8;
 // mulberry32, seeded from a string hash (xmur3-ish). Deterministic across
 // JS engines/platforms — no Math.random, no Date, no crypto.
 
-function hashSeed(s: string): number {
+export function hashSeed(s: string): number {
   let h = 1779033703 ^ s.length;
   for (let i = 0; i < s.length; i++) {
     h = Math.imul(h ^ s.charCodeAt(i), 3432918353);
@@ -60,7 +60,7 @@ function hashSeed(s: string): number {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -70,15 +70,15 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-type Rng = () => number;
-const randBit = (rng: Rng): Bit => (rng() < 0.5 ? 0 : 1);
-const randBits = (rng: Rng, n: number): Bit[] =>
+export type Rng = () => number;
+export const randBit = (rng: Rng): Bit => (rng() < 0.5 ? 0 : 1);
+export const randBits = (rng: Rng, n: number): Bit[] =>
   Array.from({ length: n }, () => randBit(rng));
-const pick = <T>(rng: Rng, arr: readonly T[]): T => arr[Math.floor(rng() * arr.length)] as T;
-const fmt = (bits: Bit[]): string => bits.join("");
+export const pick = <T>(rng: Rng, arr: readonly T[]): T => arr[Math.floor(rng() * arr.length)] as T;
+export const fmt = (bits: Bit[]): string => bits.join("");
 
 /** Fisher–Yates shuffle of `[correctText, ...distractors]`, seeded by `rng`. */
-function mcqFrom(
+export function mcqFrom(
   rng: Rng,
   correctText: string,
   distractors: readonly string[],
@@ -115,7 +115,8 @@ function truthRow(g: GateId): string {
   return `${evalGate(g, 0, 0)}${evalGate(g, 0, 1)}${evalGate(g, 1, 0)}${evalGate(g, 1, 1)}`;
 }
 
-type Variant = Omit<Task, "id" | "topic">;
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export type Variant = DistributiveOmit<Task, "id" | "topic">;
 type Gen = (rng: Rng) => Variant;
 
 /** `countNext` treats reset/enable priority the same way the simulator does. */
@@ -228,11 +229,10 @@ const GENERATORS: Record<TopicId, readonly Gen[]> = {
       const others = (Object.keys(formulas) as (keyof typeof formulas)[]).filter(
         (k) => k !== kind,
       );
-      const { options, correct } = mcqFrom(
-        rng,
-        formulas[kind],
-        others.map((k) => formulas[k]),
-      );
+      const { options, correct } = mcqFrom(rng, formulas[kind], [
+        ...others.map((k) => formulas[k]),
+        "Q⁺ = Q̅",
+      ]);
       return {
         kind: "mcq",
         question: `Яке характеристичне рівняння відповідає ${kind}-тригеру?`,
@@ -540,8 +540,8 @@ const GENERATORS: Record<TopicId, readonly Gen[]> = {
     // T2 — conceptual: full adders needed for an N-bit adder.
     (rng) => {
       const width = pick(rng, [4, 8, 16] as const);
-      const pool = [4, 8, 16].filter((v) => v !== width);
-      const { options, correct } = mcqFrom(rng, `${width}`, pool.map(String));
+      const pool = [4, 8, 16, 32].filter((v) => v !== width);
+      const { options, correct } = mcqFrom(rng, `${width}`, pool.slice(0, 3).map(String));
       return {
         kind: "mcq",
         question: `Скільки одно­розрядних повних суматорів потрібно, щоб побудувати ${width}-розрядний суматор?`,
@@ -653,10 +653,18 @@ function taskId(topic: TopicId, slot: number, seed: string): string {
 }
 
 /** Deterministic task for one (topic, slot) pair under `seed` (normally the user id). */
-export function generateTask(topic: TopicId, slot: number, seed: string): Task {
+export function generateTask(
+  topic: TopicId,
+  slot: number,
+  seed: string,
+  only?: readonly number[],
+): Task {
   const rng = mulberry32(hashSeed(`${seed}:${topic}:${slot}`));
   const templates = GENERATORS[topic];
-  const gen = templates[slot % templates.length]!;
+  // `only` restricts which template indices a course topic may use (several
+  // course topics share one simulator, e.g. RS vs D/JK/T flip-flops).
+  const idx = only && only.length > 0 ? only[slot % only.length]! : slot % templates.length;
+  const gen = templates[idx]!;
   // Spreading a `Variant` union here loses the discriminant across the
   // object literal (a TS limitation, not a runtime issue) — the cast is safe
   // because every generator returns a complete, self-consistent shape.

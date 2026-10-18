@@ -61,7 +61,7 @@ test("this app ships its auth schema and app schema already applied", () => {
   const pending = pendingMigrations(readdirSync(migrationsDir), []);
   assert.deepEqual(
     pending.map((m) => m.name),
-    ["0001_auth.sql", "0002_schemalab.sql"],
+    ["0001_auth.sql", "0002_schemalab.sql", "0003_tests.sql"],
   );
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
 });

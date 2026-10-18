@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { LogOut } from "lucide-react";
 import { authEnabled, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { TOTAL_TASKS, totalDone, useProgress } from "@/lib/progress";
-import { useMyProfile, useSchoolReady } from "@/lib/school-client";
+import { COURSE_TOPICS, PRACTICE_SLOTS } from "@/lib/course";
+import { useMyProfile, useMyProgress, useSchoolReady } from "@/lib/school-client";
 import { cn } from "@/lib/utils";
 
 function ChipMark() {
@@ -35,16 +35,12 @@ export function AppShell({
   current,
 }: {
   children: ReactNode;
-  current?: "home" | "exam";
+  current?: "home";
 }) {
-  const hydrate = useProgress((s) => s.hydrate);
-  const ready = useProgress((s) => s.ready);
-  const completed = useProgress((s) => s.completed);
-  const done = ready ? totalDone(completed) : 0;
-
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+  const ready = useSchoolReady();
+  const progress = useMyProgress();
+  const done = Object.values(progress.data?.practice ?? {}).reduce((a, b) => a + b, 0);
+  const total = COURSE_TOPICS.length * PRACTICE_SLOTS;
 
   return (
     <div className="lab-grid min-h-dvh">
@@ -62,20 +58,17 @@ export function AppShell({
             <NavLink to="/" active={current === "home"}>
               Каталог
             </NavLink>
-            <NavLink to="/practice" active={current === "exam"}>
-              Контрольна
-            </NavLink>
             <AccountNav />
           </nav>
           <div className="hidden items-center gap-2 sm:flex">
             <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-2">
               <div
                 className="h-full bg-signal transition-[width] duration-[var(--motion-fast)] ease-[var(--ease-smooth-out)]"
-                style={{ width: `${ready ? (done / TOTAL_TASKS) * 100 : 0}%` }}
+                style={{ width: `${ready ? (done / total) * 100 : 0}%` }}
               />
             </div>
             <span className="font-mono text-xs tabular-nums text-muted">
-              {ready ? `${done}/${TOTAL_TASKS}` : "—"}
+              {ready ? `${done}/${total}` : "—"}
             </span>
           </div>
         </div>

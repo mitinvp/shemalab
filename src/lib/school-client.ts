@@ -4,20 +4,21 @@ import {
   getGroupReport,
   getMyProfile,
   getMyProgress,
+  getPassedSlots,
   joinGroup,
   listMyGroups,
   recordSlotAttempt,
   setMyName,
-  submitExamResult,
+  startTest,
+  submitTest,
 } from "@/lib/school";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { authEnabled } from "@/lib/auth/client";
 
 /**
- * True once it's safe to call the signed-in-only server functions above:
- * auth is on, the session finished resolving, and someone is signed in.
- * Every hook below is a no-op query (`enabled: false`) until this is true,
- * so components can call these hooks unconditionally.
+ * True once it's safe to call the signed-in-only server functions: auth is
+ * on, the session finished resolving, and someone is signed in. Every query
+ * below is disabled until then, so components can call hooks unconditionally.
  */
 export function useSchoolReady(): boolean {
   const { user, isPending } = useCurrentUserState();
@@ -52,21 +53,38 @@ export function useMyProgress() {
   });
 }
 
-export function useRecordSlotAttempt() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { topic: string; slot: number; answer: unknown }) =>
-      recordSlotAttempt({ data: input as never }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["school", "progress"] }),
+export function usePassedSlots(topic: string) {
+  const ready = useSchoolReady();
+  return useQuery({
+    queryKey: ["school", "passed", topic],
+    queryFn: () => getPassedSlots({ data: { topic } }),
+    enabled: ready,
+    staleTime: 5_000,
   });
 }
 
-export function useSubmitExamResult() {
+export function useRecordSlotAttempt(topic: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { attemptSalt: string; answers: Record<string, unknown> }) =>
-      submitExamResult({ data: input as never }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["school", "profile"] }),
+    mutationFn: (input: { slot: number; answer: unknown }) =>
+      recordSlotAttempt({ data: { topic, slot: input.slot, answer: input.answer } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["school", "progress"] });
+      void qc.invalidateQueries({ queryKey: ["school", "passed", topic] });
+    },
+  });
+}
+
+export function useStartTest(topic: string) {
+  return useMutation({ mutationFn: () => startTest({ data: { topic } }) });
+}
+
+export function useSubmitTest(topic: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { salt: string; answers: unknown[] }) =>
+      submitTest({ data: { topic, salt: input.salt, answers: input.answers } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["school", "progress"] }),
   });
 }
 

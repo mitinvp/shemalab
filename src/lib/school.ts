@@ -1,8 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { GENERATED_TASKS_PER_TOPIC, generateTask } from "@/lib/task-generator";
-import { TOPIC_IDS, type TopicId } from "@/lib/topics";
-import { bitsEqual, type Bit } from "@/lib/digital";
+import {
+  COURSE_BY_ID,
+  COURSE_TOPIC_IDS,
+  PRACTICE_SLOTS,
+  TEST_SIZE,
+  correctText,
+  isCorrect,
+  practiceTask,
+  stripSecrets,
+  testTasks,
+  type SecretTask,
+} from "@/lib/course";
 
 export type Role = "student" | "teacher";
 
@@ -183,75 +192,141 @@ export const joinGroup = createServerFn({ method: "POST" })
     return group;
   });
 
-// ── Progress ─────────────────────────────────────────────────────────────
+// ── Progress & tests ─────────────────────────────────────────────────────
 
-export type TopicProgress = Record<TopicId, number>;
+export type MyProgress = {
+  /** Practice slots passed, per course topic. */
+  practice: Record<string, number>;
+  /** Best and latest test result per course topic (only topics with attempts). */
+  tests: Record<string, { best: number; last: number; total: number; attempts: number }>;
+};
 
 export const getMyProgress = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .handler(async ({ context }): Promise<TopicProgress> => {
+  .handler(async ({ context }): Promise<MyProgress> => {
     const { getSql } = await import("@/lib/db");
     const sql = await getSql();
-    const rows = await sql<{ topic: TopicId; n: number }>`
+    const practiceRows = await sql<{ topic: string; n: number }>`
       select topic, count(*)::int as n
       from slot_progress
       where user_id = ${context.userId} and correct = true
       group by topic
     `;
-    const out = Object.fromEntries(TOPIC_IDS.map((t) => [t, 0])) as TopicProgress;
-    for (const r of rows) out[r.topic] = r.n;
-    return out;
+    const testRows = await sql<{
+      topic: string;
+      best: number;
+      total: number;
+      attempts: number;
+      last: number;
+    }>`
+      select t.topic,
+             max(t.score)::int as best,
+             max(t.total)::int as total,
+             count(*)::int as attempts,
+             (array_agg(t.score order by t.taken_at desc))[1]::int as last
+      from test_results t
+      where t.user_id = ${context.userId}
+      group by t.topic
+    `;
+    const practice: Record<string, number> = {};
+    for (const id of COURSE_TOPIC_IDS) practice[id] = 0;
+    for (const r of practiceRows) if (r.topic in practice) practice[r.topic] = Math.min(r.n, PRACTICE_SLOTS);
+    const tests: MyProgress["tests"] = {};
+    for (const r of testRows) {
+      if (!(r.topic in COURSE_BY_ID)) continue;
+      tests[r.topic] = { best: r.best, last: r.last, total: r.total, attempts: r.attempts };
+    }
+    return { practice, tests };
   });
 
 /**
- * Grades a submitted answer by RECOMPUTING the canonical task server-side
- * from (topic, slot, userId) — the client's own "correct" claim is never
- * trusted, so opening devtools can't forge a passed slot.
+ * Grades a practice answer by RECOMPUTING the canonical task server-side from
+ * (topic, slot, userId) — the client's own "correct" claim is never trusted.
  */
 export const recordSlotAttempt = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((d: { topic: TopicId; slot: number; answer: Bit[] | number }) => d)
-  .handler(async ({ context, data }): Promise<{ correct: boolean; explain: string }> => {
-    const task = generateTask(data.topic, data.slot, context.userId);
-    const ok =
-      task.kind === "mcq"
-        ? typeof data.answer === "number" && data.answer === task.correct
-        : Array.isArray(data.answer) && bitsEqual(data.answer, task.correct);
-
+  .validator((d: { topic: string; slot: number; answer: unknown }) => d)
+  .handler(async ({ context, data }): Promise<{ correct: boolean }> => {
+    const topic = COURSE_BY_ID[data.topic];
+    if (!topic) throw new Error("Невідома тема.");
+    if (!Number.isInteger(data.slot) || data.slot < 0 || data.slot >= PRACTICE_SLOTS) {
+      throw new Error("Невірний номер завдання.");
+    }
+    const task = practiceTask(topic, data.slot, context.userId);
+    const ok = isCorrect(task, data.answer);
     const { getSql } = await import("@/lib/db");
     const sql = await getSql();
     await sql`
       insert into slot_progress (user_id, topic, slot, correct, attempts, updated_at)
-      values (${context.userId}, ${data.topic}, ${data.slot}, ${ok}, 1, now())
+      values (${context.userId}, ${topic.id}, ${data.slot}, ${ok}, 1, now())
       on conflict (user_id, topic, slot) do update
         set correct = slot_progress.correct or excluded.correct,
             attempts = slot_progress.attempts + 1,
             updated_at = now()
     `;
-    return { correct: ok, explain: task.explain };
+    return { correct: ok };
   });
 
-export const submitExamResult = createServerFn({ method: "POST" })
+/** Which practice slots the student has already passed (so the UI can mark them). */
+export const getPassedSlots = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .validator((d: { attemptSalt: string; answers: Record<TopicId, Bit[] | number> }) => d)
-  .handler(async ({ context, data }): Promise<{ score: number; total: number }> => {
-    let score = 0;
-    for (const topic of TOPIC_IDS) {
-      const task = generateTask(topic, 0, `${context.userId}#${data.attemptSalt}`);
-      const answer = data.answers[topic];
-      const ok =
-        task.kind === "mcq"
-          ? typeof answer === "number" && answer === task.correct
-          : Array.isArray(answer) && bitsEqual(answer, task.correct);
-      if (ok) score += 1;
-    }
+  .validator((d: { topic: string }) => d)
+  .handler(async ({ context, data }): Promise<number[]> => {
+    if (!COURSE_BY_ID[data.topic]) return [];
     const { getSql } = await import("@/lib/db");
     const sql = await getSql();
-    await sql`
-      insert into exam_results (user_id, score, total) values (${context.userId}, ${score}, ${TOPIC_IDS.length})
+    const rows = await sql<{ slot: number }>`
+      select slot from slot_progress
+      where user_id = ${context.userId} and topic = ${data.topic} and correct = true
+      order by slot
     `;
-    return { score, total: TOPIC_IDS.length };
+    return rows.map((r) => r.slot);
   });
+
+// ── Tests (per-student, drawn from the question bank) ────────────────────
+
+/** Starts a test attempt: returns the student's own questions WITHOUT answers. */
+export const startTest = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: { topic: string }) => d)
+  .handler(async ({ context, data }): Promise<{ salt: string; items: SecretTask[] }> => {
+    const topic = COURSE_BY_ID[data.topic];
+    if (!topic) throw new Error("Невідома тема.");
+    const salt = crypto.randomUUID();
+    return { salt, items: testTasks(topic, context.userId, salt).map(stripSecrets) };
+  });
+
+export type TestReview = { ok: boolean; correct: string; explain: string };
+
+/** Grades a finished attempt by regenerating it from (user, topic, salt). */
+export const submitTest = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: { topic: string; salt: string; answers: unknown[] }) => d)
+  .handler(
+    async ({ context, data }): Promise<{ score: number; total: number; review: TestReview[] }> => {
+      const topic = COURSE_BY_ID[data.topic];
+      if (!topic) throw new Error("Невідома тема.");
+      if (typeof data.salt !== "string" || data.salt.length < 8 || data.salt.length > 64) {
+        throw new Error("Невірний тест.");
+      }
+      const tasks = testTasks(topic, context.userId, data.salt);
+      const review: TestReview[] = tasks.map((task, i) => ({
+        ok: isCorrect(task, data.answers?.[i]),
+        correct: correctText(task),
+        explain: task.explain,
+      }));
+      const score = review.filter((r) => r.ok).length;
+      const { getSql } = await import("@/lib/db");
+      const sql = await getSql();
+      await sql`
+        insert into test_results (user_id, topic, score, total)
+        values (${context.userId}, ${topic.id}, ${score}, ${tasks.length})
+      `;
+      return { score, total: tasks.length, review };
+    },
+  );
+
+export { PRACTICE_SLOTS, TEST_SIZE };
 
 // ── Teacher report ──────────────────────────────────────────────────────
 
@@ -259,9 +334,10 @@ export type StudentReportRow = {
   userId: string;
   fullName: string | null;
   email: string | null;
-  perTopic: Record<TopicId, number>;
-  totalDone: number;
-  examBest: { score: number; total: number } | null;
+  practice: Record<string, number>;
+  testBest: Record<string, { score: number; total: number } | null>;
+  practiceDone: number;
+  testsDone: number;
 };
 
 export const getGroupReport = createServerFn({ method: "GET" })
@@ -288,7 +364,7 @@ export const getGroupReport = createServerFn({ method: "GET" })
       order by coalesce(p.full_name, u.email)
     `;
 
-    const progress = await sql<{ user_id: string; topic: TopicId; n: number }>`
+    const practice = await sql<{ user_id: string; topic: string; n: number }>`
       select sp.user_id, sp.topic, count(*)::int as n
       from slot_progress sp
       join group_members gm on gm.group_id = ${data.groupId} and gm.user_id = sp.user_id
@@ -296,29 +372,36 @@ export const getGroupReport = createServerFn({ method: "GET" })
       group by sp.user_id, sp.topic
     `;
 
-    const examBest = await sql<{ user_id: string; score: number; total: number }>`
-      select distinct on (er.user_id) er.user_id, er.score, er.total
-      from exam_results er
-      join group_members gm on gm.group_id = ${data.groupId} and gm.user_id = er.user_id
-      order by er.user_id, er.score desc, er.taken_at desc
+    const tests = await sql<{ user_id: string; topic: string; score: number; total: number }>`
+      select distinct on (tr.user_id, tr.topic) tr.user_id, tr.topic, tr.score, tr.total
+      from test_results tr
+      join group_members gm on gm.group_id = ${data.groupId} and gm.user_id = tr.user_id
+      order by tr.user_id, tr.topic, tr.score desc, tr.taken_at desc
     `;
 
     const rows: StudentReportRow[] = members.map((m) => {
-      const perTopic = Object.fromEntries(TOPIC_IDS.map((t) => [t, 0])) as Record<TopicId, number>;
-      for (const p of progress) if (p.user_id === m.user_id) perTopic[p.topic] = p.n;
-      const totalDone = Object.values(perTopic).reduce((a, b) => a + b, 0);
-      const best = examBest.find((e) => e.user_id === m.user_id) ?? null;
+      const pr: Record<string, number> = {};
+      const tb: StudentReportRow["testBest"] = {};
+      for (const id of COURSE_TOPIC_IDS) {
+        pr[id] = 0;
+        tb[id] = null;
+      }
+      for (const p of practice) {
+        if (p.user_id === m.user_id && p.topic in pr) pr[p.topic] = Math.min(p.n, PRACTICE_SLOTS);
+      }
+      for (const t of tests) {
+        if (t.user_id === m.user_id && t.topic in tb) tb[t.topic] = { score: t.score, total: t.total };
+      }
       return {
         userId: m.user_id,
         fullName: m.full_name,
         email: m.email,
-        perTopic,
-        totalDone,
-        examBest: best ? { score: best.score, total: best.total } : null,
+        practice: pr,
+        testBest: tb,
+        practiceDone: Object.values(pr).reduce((a, b) => a + b, 0),
+        testsDone: Object.values(tb).filter(Boolean).length,
       };
     });
 
     return { groupName: group[0].name, rows };
   });
-
-export { GENERATED_TASKS_PER_TOPIC };
