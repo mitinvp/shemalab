@@ -41,7 +41,7 @@ export function McqOptions({
             disabled={locked}
             onClick={() => onChoose(i)}
             className={cn(
-              "flex min-h-11 items-center gap-2 rounded-sm px-3 py-2 text-left text-sm transition-[background-color,box-shadow,color] duration-[var(--motion-quick)] ease-[var(--ease-out)]",
+              "flex min-h-11 items-center gap-2 rounded-sm px-3 py-2 text-left text-base transition-[background-color,box-shadow,color] duration-[var(--motion-quick)] ease-[var(--ease-out)]",
               selected
                 ? "bg-surface-2 text-fg shadow-[var(--shadow-border-hover)]"
                 : "text-muted shadow-[var(--shadow-border)] hover:text-fg",
@@ -115,7 +115,7 @@ function TaskCard({
   return (
     <Panel>
       <div className="mb-3 flex items-start justify-between gap-3">
-        <p className="text-sm font-medium text-fg">
+        <p className="text-base font-medium text-fg">
           <span className="mr-2 font-mono text-xs text-muted">{index + 1}.</span>
           {task.question}
         </p>

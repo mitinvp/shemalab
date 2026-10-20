@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { LogOut } from "lucide-react";
 import { authEnabled, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -30,6 +30,44 @@ function ChipMark() {
   );
 }
 
+const FONT_STEPS = [100, 112.5, 125, 137.5, 150];
+const FONT_KEY = "schemalab-font";
+
+/** А− / А+ buttons: page text size, remembered in this browser. */
+function FontControl() {
+  const [i, setI] = useState(1);
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem(FONT_KEY));
+      if (Number.isInteger(v) && v >= 0 && v < FONT_STEPS.length && localStorage.getItem(FONT_KEY) !== null) {
+        setI(v);
+      }
+    } catch {
+      /* storage unavailable — keep default */
+    }
+  }, []);
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${FONT_STEPS[i]}%`;
+    try {
+      localStorage.setItem(FONT_KEY, String(i));
+    } catch {
+      /* ignore */
+    }
+  }, [i]);
+  const btn =
+    "inline-flex size-10 items-center justify-center rounded-sm font-medium text-muted transition-colors duration-[var(--motion-quick)] hover:text-fg disabled:opacity-30";
+  return (
+    <div className="mr-1 flex items-center" role="group" aria-label="Розмір шрифту">
+      <button type="button" className={btn} disabled={i === 0} onClick={() => setI(i - 1)} aria-label="Менший шрифт" title="Менший шрифт">
+        <span className="text-sm">А−</span>
+      </button>
+      <button type="button" className={btn} disabled={i === FONT_STEPS.length - 1} onClick={() => setI(i + 1)} aria-label="Більший шрифт" title="Більший шрифт">
+        <span className="text-lg">А+</span>
+      </button>
+    </div>
+  );
+}
+
 export function AppShell({
   children,
   current,
@@ -55,6 +93,7 @@ export function AppShell({
             <span className="font-display text-lg leading-none">СхемаЛаб</span>
           </Link>
           <nav className="ml-auto flex items-center gap-1">
+            <FontControl />
             <NavLink to="/" active={current === "home"}>
               Каталог
             </NavLink>

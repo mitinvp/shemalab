@@ -5,7 +5,8 @@ import { TopicSimulator } from "@/components/simulators";
 import { PracticeTasks } from "@/components/task-panel";
 import { TestPanel } from "@/components/test-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { COURSE_BY_ID, PRACTICE_SLOTS } from "@/lib/course";
+import { Figure } from "@/components/figures";
+import { COURSE_BY_ID, EXTRAS, PRACTICE_SLOTS } from "@/lib/course";
 import { useMyProgress, useSchoolReady } from "@/lib/school-client";
 
 export const Route = createFileRoute("/lab/$topicId")({ component: TopicPage });
@@ -17,6 +18,7 @@ function TopicPage() {
   const topic = COURSE_BY_ID[topicId];
   if (!topic) return <Navigate to="/" />;
 
+  const extras = EXTRAS[topic.id];
   const done = progress.data?.practice[topic.id] ?? 0;
   const test = progress.data?.tests[topic.id];
 
@@ -58,32 +60,60 @@ function TopicPage() {
         </TabsList>
 
         <TabsContent value="theory">
-          <article className="space-y-4">
-            {topic.theory.map((s) => (
-              <section
-                key={s.title}
-                className="rounded-xl bg-surface p-4 shadow-[var(--shadow-border)]"
-              >
-                <h2 className="font-medium text-fg">{s.title}</h2>
-                <p className="mt-2 text-sm leading-relaxed text-muted">{s.body}</p>
-                {s.formula ? (
-                  <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-sm bg-surface-2 px-3 py-2 font-mono text-xs text-fg">
-                    {s.formula}
-                  </pre>
-                ) : null}
-              </section>
+          <article className="space-y-5">
+            {topic.theory.map((sec, idx) => (
+              <div key={sec.title} className="space-y-4">
+                <section className="rounded-xl bg-surface p-5 shadow-[var(--shadow-border)]">
+                  <h2 className="text-lg font-medium text-fg">{sec.title}</h2>
+                  <p className="mt-2 text-base leading-relaxed text-muted">{sec.body}</p>
+                  {sec.formula ? (
+                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-sm bg-surface-2 px-3 py-2 font-mono text-sm text-fg">
+                      {sec.formula}
+                    </pre>
+                  ) : null}
+                </section>
+                {(extras?.figures ?? [])
+                  .filter((f) => (f.after ?? 0) === idx)
+                  .map((f) => (
+                    <Figure key={f.id} id={f.id} caption={f.caption} />
+                  ))}
+              </div>
             ))}
-            <section className="rounded-xl bg-surface p-4 shadow-[var(--shadow-border)]">
-              <h2 className="font-medium text-fg">На що звернути увагу</h2>
-              <ul className="mt-3 space-y-2 text-sm leading-relaxed text-muted">
+            {extras?.example ? (
+              <section className="rounded-xl bg-surface p-5 shadow-[var(--shadow-border)]">
+                <h2 className="text-lg font-medium text-fg">Приклад</h2>
+                <p className="mt-1 text-base text-fg">{extras.example.title}</p>
+                <ol className="mt-3 list-decimal space-y-2 pl-6 text-base leading-relaxed text-muted marker:text-subtle">
+                  {extras.example.steps.map((st) => (
+                    <li key={st}>{st}</li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+            <section className="rounded-xl bg-surface p-5 shadow-[var(--shadow-border)]">
+              <h2 className="text-lg font-medium text-fg">На що звернути увагу</h2>
+              <ul className="mt-3 space-y-2 text-base leading-relaxed text-muted">
                 {topic.notes.map((note) => (
                   <li key={note} className="flex gap-2">
-                    <span className="mt-2 size-1 shrink-0 rounded-full bg-accent" />
+                    <span className="mt-2.5 size-1.5 shrink-0 rounded-full bg-accent" />
                     <span>{note}</span>
                   </li>
                 ))}
               </ul>
             </section>
+            {extras?.terms.length ? (
+              <section className="rounded-xl bg-surface p-5 shadow-[var(--shadow-border)]">
+                <h2 className="text-lg font-medium text-fg">Ключові терміни</h2>
+                <dl className="mt-3 space-y-3 text-base leading-relaxed">
+                  {extras.terms.map(([term, def]) => (
+                    <div key={term}>
+                      <dt className="font-medium text-fg">{term}</dt>
+                      <dd className="text-muted">{def}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ) : null}
           </article>
         </TabsContent>
 

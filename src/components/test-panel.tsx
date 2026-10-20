@@ -32,7 +32,7 @@ function TestQuestion({
 }) {
   return (
     <Panel>
-      <p className="mb-3 text-sm font-medium text-fg">
+      <p className="mb-3 text-base font-medium text-fg">
         <span className="mr-2 font-mono text-xs text-muted">{index + 1}.</span>
         {item.question}
       </p>

@@ -5,6 +5,7 @@ import { M3 } from "./module3";
 import type { CourseModule, CourseTopic } from "./types";
 
 export * from "./types";
+export { EXTRAS, type TopicExtras } from "./extras";
 export {
   PRACTICE_SLOTS,
   TEST_SIZE,

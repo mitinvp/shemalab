@@ -40,6 +40,9 @@
 
 @layer base {
   html {
+    /* 18px base (was 16px): everything in rem scales with it; users can
+       change it further with the А− / А+ buttons in the header. */
+    font-size: 112.5%;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
