@@ -122,3 +122,8 @@ export function stripSecrets(task: Task): SecretTask {
     ? { id: task.id, kind: "mcq", question: task.question, options: task.options }
     : { id: task.id, kind: "bits", question: task.question, labels: task.labels };
 }
+
+/** Stable short key of a bank question (hash of its text) for statistics. */
+export function questionKey(text: string): string {
+  return hashSeed(text).toString(36);
+}

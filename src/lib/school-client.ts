@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createGroup,
+  getGroupQuestionStats,
   getGroupReport,
   getMyProfile,
   getMyProgress,
@@ -8,6 +9,7 @@ import {
   joinGroup,
   listMyGroups,
   recordSlotAttempt,
+  setLabAccepted,
   setMyName,
   startTest,
   submitTest,
@@ -121,5 +123,24 @@ export function useGroupReport(groupId: string | null) {
     queryFn: () => getGroupReport({ data: { groupId: groupId as string } }),
     enabled: ready && groupId !== null,
     staleTime: 5_000,
+  });
+}
+
+export function useSetLabAccepted(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { userId: string; labId: string; accepted: boolean }) =>
+      setLabAccepted({ data: { groupId, ...input } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["school", "report", groupId] }),
+  });
+}
+
+export function useQuestionStats(groupId: string) {
+  const ready = useSchoolReady();
+  return useQuery({
+    queryKey: ["school", "qstats", groupId],
+    queryFn: () => getGroupQuestionStats({ data: { groupId } }),
+    enabled: ready,
+    staleTime: 30_000,
   });
 }

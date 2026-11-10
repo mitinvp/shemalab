@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as PracticeRouteImport } from './routes/practice'
 import { Route as TeacherRouteImport } from './routes/teacher'
 import { Route as LabTopicIdRouteImport } from './routes/lab.$topicId'
+import { Route as LabworkLabIdRouteImport } from './routes/labwork.$labId'
 import { Route as TeacherGroupIdRouteImport } from './routes/teacher.$groupId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
@@ -48,6 +49,11 @@ const LabTopicIdRoute = LabTopicIdRouteImport.update({
   path: '/lab/$topicId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LabworkLabIdRoute = LabworkLabIdRouteImport.update({
+  id: '/labwork/$labId',
+  path: '/labwork/$labId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TeacherGroupIdRoute = TeacherGroupIdRouteImport.update({
   id: '/$groupId',
   path: '/$groupId',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/practice': typeof PracticeRoute
   '/teacher': typeof TeacherRouteWithChildren
   '/lab/$topicId': typeof LabTopicIdRoute
+  '/labwork/$labId': typeof LabworkLabIdRoute
   '/teacher/$groupId': typeof TeacherGroupIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -76,6 +83,7 @@ export interface FileRoutesByTo {
   '/practice': typeof PracticeRoute
   '/teacher': typeof TeacherRouteWithChildren
   '/lab/$topicId': typeof LabTopicIdRoute
+  '/labwork/$labId': typeof LabworkLabIdRoute
   '/teacher/$groupId': typeof TeacherGroupIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -87,6 +95,7 @@ export interface FileRoutesById {
   '/practice': typeof PracticeRoute
   '/teacher': typeof TeacherRouteWithChildren
   '/lab/$topicId': typeof LabTopicIdRoute
+  '/labwork/$labId': typeof LabworkLabIdRoute
   '/teacher/$groupId': typeof TeacherGroupIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -99,6 +108,7 @@ export interface FileRouteTypes {
     | '/practice'
     | '/teacher'
     | '/lab/$topicId'
+    | '/labwork/$labId'
     | '/teacher/$groupId'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/practice'
     | '/teacher'
     | '/lab/$topicId'
+    | '/labwork/$labId'
     | '/teacher/$groupId'
     | '/api/auth/$'
   id:
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/practice'
     | '/teacher'
     | '/lab/$topicId'
+    | '/labwork/$labId'
     | '/teacher/$groupId'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
@@ -130,6 +142,7 @@ export interface RootRouteChildren {
   PracticeRoute: typeof PracticeRoute
   TeacherRoute: typeof TeacherRouteWithChildren
   LabTopicIdRoute: typeof LabTopicIdRoute
+  LabworkLabIdRoute: typeof LabworkLabIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -177,6 +190,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabTopicIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/labwork/$labId': {
+      id: '/labwork/$labId'
+      path: '/labwork/$labId'
+      fullPath: '/labwork/$labId'
+      preLoaderRoute: typeof LabworkLabIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/teacher/$groupId': {
       id: '/teacher/$groupId'
       path: '/$groupId'
@@ -212,6 +232,7 @@ const rootRouteChildren: RootRouteChildren = {
   PracticeRoute: PracticeRoute,
   TeacherRoute: TeacherRouteWithChildren,
   LabTopicIdRoute: LabTopicIdRoute,
+  LabworkLabIdRoute: LabworkLabIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

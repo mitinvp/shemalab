@@ -4,9 +4,9 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { RedirectToSignIn, SignedIn, SignedOut } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { COURSE_TOPICS, PRACTICE_SLOTS } from "@/lib/course";
+import { COURSE_TOPICS, LABS, PRACTICE_SLOTS, questionKey } from "@/lib/course";
 import type { StudentReportRow } from "@/lib/school";
-import { useGroupReport } from "@/lib/school-client";
+import { useGroupReport, useQuestionStats, useSetLabAccepted } from "@/lib/school-client";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/teacher/$groupId")({ component: ReportPage });
@@ -25,6 +25,8 @@ function downloadCsv(groupName: string, rows: StudentReportRow[]) {
     ...COURSE_TOPICS.flatMap((t) => [`Т${t.n} практика`, `Т${t.n} тест`]),
     "Завдань усього",
     "Тестів пройдено",
+    ...LABS.map((l) => `ЛР ${l.number}`),
+    "ЛР прийнято",
   ];
   const lines = rows.map((r) => [
     name(r),
@@ -35,6 +37,8 @@ function downloadCsv(groupName: string, rows: StudentReportRow[]) {
     }),
     r.practiceDone,
     r.testsDone,
+    ...LABS.map((l) => (r.labs[l.id] ? "так" : "")),
+    r.labsDone,
   ]);
   const text = [header, ...lines].map((l) => l.map(csvCell).join(";")).join("\n");
   const blob = new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8" });
@@ -113,7 +117,104 @@ function ReportTable({ groupId }: { groupId: string }) {
           </table>
         </div>
       )}
+      {rows.length > 0 ? <LabsTable groupId={groupId} rows={rows} /> : null}
+      {rows.length > 0 ? <QuestionStats groupId={groupId} /> : null}
     </div>
+  );
+}
+
+function LabsTable({ groupId, rows }: { groupId: string; rows: StudentReportRow[] }) {
+  const set = useSetLabAccepted(groupId);
+  return (
+    <section className="space-y-3 pt-6">
+      <h2 className="font-display text-xl text-fg">Лабораторні роботи</h2>
+      <p className="text-sm text-muted">Натисніть клітинку, щоб позначити роботу як прийняту (повторне натискання знімає позначку).</p>
+      <div className="overflow-x-auto rounded-xl bg-surface shadow-[var(--shadow-border)]">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border/60 text-left text-xs text-subtle">
+              <th className="sticky left-0 bg-surface px-3 py-2 font-medium">Студент</th>
+              {LABS.map((l) => (
+                <th key={l.id} className="px-3 py-2 text-center font-mono font-medium" title={l.title}>
+                  ЛР {l.number}
+                </th>
+              ))}
+              <th className="px-3 py-2 text-center font-medium">Разом</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.userId} className="border-b border-border/40 last:border-0">
+                <td className="sticky left-0 whitespace-nowrap bg-surface px-3 py-2 text-fg">{name(r)}</td>
+                {LABS.map((l) => {
+                  const on = r.labs[l.id];
+                  return (
+                    <td key={l.id} className="px-1 py-1 text-center">
+                      <button
+                        type="button"
+                        aria-pressed={on}
+                        disabled={set.isPending}
+                        onClick={() => set.mutate({ userId: r.userId, labId: l.id, accepted: !on })}
+                        className={cn(
+                          "inline-flex size-10 items-center justify-center rounded-sm font-mono text-base transition-colors duration-[var(--motion-quick)]",
+                          on ? "bg-signal-dim text-ok" : "text-subtle hover:text-fg",
+                        )}
+                      >
+                        {on ? "✓" : "—"}
+                      </button>
+                    </td>
+                  );
+                })}
+                <td className="px-3 py-2 text-center font-mono tabular-nums text-fg">
+                  {r.labsDone}/{LABS.length}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {set.isError ? <p className="text-sm text-danger">{set.error.message}</p> : null}
+    </section>
+  );
+}
+
+function QuestionStats({ groupId }: { groupId: string }) {
+  const stats = useQuestionStats(groupId);
+  const lookup = new Map<string, string>();
+  for (const t of COURSE_TOPICS) for (const row of t.bank) lookup.set(`${t.id}:${questionKey(row[0])}`, row[0]);
+  const topicN = (id: string) => COURSE_TOPICS.find((t) => t.id === id)?.n ?? "?";
+  return (
+    <section className="space-y-3 pt-6">
+      <h2 className="font-display text-xl text-fg">Найскладніші питання тестів</h2>
+      <p className="text-sm text-muted">
+        Питання з банку, на які група відповідає гірше за все (враховано питання щонайменше з трьома відповідями).
+        Якщо майже всі помиляються — можливо, питання сформульоване нечітко.
+      </p>
+      {stats.isPending ? (
+        <p className="text-sm text-muted">Завантаження…</p>
+      ) : stats.isError ? (
+        <p className="text-sm text-danger">{stats.error.message}</p>
+      ) : stats.data.length === 0 ? (
+        <p className="text-sm text-muted">Поки що замало відповідей: статистика зʼявиться після кількох пройдених тестів.</p>
+      ) : (
+        <ol className="space-y-2">
+          {stats.data.map((q) => {
+            const pct = Math.round((q.correctN / q.n) * 100);
+            return (
+              <li key={`${q.topic}:${q.qkey}`} className="rounded-xl bg-surface p-3 shadow-[var(--shadow-border)]">
+                <div className="flex flex-wrap items-baseline gap-x-3 font-mono text-xs tabular-nums">
+                  <span className={pct < 40 ? "text-danger" : "text-muted"}>вірно {pct}%</span>
+                  <span className="text-subtle">
+                    {q.correctN}/{q.n} відповідей · тема {topicN(q.topic)}
+                  </span>
+                </div>
+                <p className="mt-1 text-base text-fg">{lookup.get(`${q.topic}:${q.qkey}`) ?? "(питання вилучено з банку)"}</p>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 }
 

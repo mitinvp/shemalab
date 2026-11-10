@@ -6,7 +6,7 @@ import { PracticeTasks } from "@/components/task-panel";
 import { TestPanel } from "@/components/test-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Figure } from "@/components/figures";
-import { COURSE_BY_ID, EXTRAS, PRACTICE_SLOTS } from "@/lib/course";
+import { COURSE_BY_ID, EXTRAS, LABS, PRACTICE_SLOTS } from "@/lib/course";
 import { useMyProgress, useSchoolReady } from "@/lib/school-client";
 
 export const Route = createFileRoute("/lab/$topicId")({ component: TopicPage });
@@ -40,7 +40,16 @@ function TopicPage() {
           </p>
           <h1 className="mt-1 font-display text-3xl text-fg">{topic.title}</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">{topic.blurb}</p>
-          {topic.lab ? <p className="mt-2 text-sm text-accent">{topic.lab}</p> : null}
+          {LABS.filter((l) => l.topicId === topic.id).map((l) => (
+            <Link
+              key={l.id}
+              to="/labwork/$labId"
+              params={{ labId: l.id }}
+              className="mt-3 inline-flex min-h-11 items-center rounded-sm px-3 text-base text-accent shadow-[var(--shadow-border)] transition-[box-shadow] duration-[var(--motion-quick)] hover:shadow-[var(--shadow-border-hover)]"
+            >
+              Лабораторна № {l.number}: {l.title} →
+            </Link>
+          ))}
         </div>
         {ready ? (
           <div className="font-mono text-sm tabular-nums text-muted">

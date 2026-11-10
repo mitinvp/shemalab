@@ -3,6 +3,9 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import {
   COURSE_BY_ID,
   COURSE_TOPIC_IDS,
+  LABS,
+  LAB_BY_ID,
+  questionKey,
   PRACTICE_SLOTS,
   TEST_SIZE,
   correctText,
@@ -199,6 +202,8 @@ export type MyProgress = {
   practice: Record<string, number>;
   /** Best and latest test result per course topic (only topics with attempts). */
   tests: Record<string, { best: number; last: number; total: number; attempts: number }>;
+  /** Laboratory works accepted by the teacher (lab ids). */
+  labs: string[];
 };
 
 export const getMyProgress = createServerFn({ method: "GET" })
@@ -228,6 +233,9 @@ export const getMyProgress = createServerFn({ method: "GET" })
       where t.user_id = ${context.userId}
       group by t.topic
     `;
+    const labRows = await sql<{ lab_id: string }>`
+      select lab_id from lab_accepted where user_id = ${context.userId}
+    `;
     const practice: Record<string, number> = {};
     for (const id of COURSE_TOPIC_IDS) practice[id] = 0;
     for (const r of practiceRows) if (r.topic in practice) practice[r.topic] = Math.min(r.n, PRACTICE_SLOTS);
@@ -236,7 +244,7 @@ export const getMyProgress = createServerFn({ method: "GET" })
       if (!(r.topic in COURSE_BY_ID)) continue;
       tests[r.topic] = { best: r.best, last: r.last, total: r.total, attempts: r.attempts };
     }
-    return { practice, tests };
+    return { practice, tests, labs: labRows.map((r) => r.lab_id).filter((id) => id in LAB_BY_ID) };
   });
 
 /**
@@ -318,10 +326,23 @@ export const submitTest = createServerFn({ method: "POST" })
       const score = review.filter((r) => r.ok).length;
       const { getSql } = await import("@/lib/db");
       const sql = await getSql();
-      await sql`
+      const inserted = await sql<{ id: string | number }>`
         insert into test_results (user_id, topic, score, total)
         values (${context.userId}, ${topic.id}, ${score}, ${tasks.length})
+        returning id
       `;
+      const attemptId = inserted[0]?.id;
+      if (attemptId !== undefined) {
+        // Per-question outcomes (bank questions only) for the teacher's analytics.
+        for (let i = 0; i < tasks.length; i++) {
+          const t = tasks[i]!;
+          if (!/-b\d+$/.test(t.id)) continue;
+          await sql`
+            insert into test_answers (attempt_id, user_id, topic, qkey, ok)
+            values (${attemptId}, ${context.userId}, ${topic.id}, ${questionKey(t.question)}, ${review[i]!.ok})
+          `;
+        }
+      }
       return { score, total: tasks.length, review };
     },
   );
@@ -338,6 +359,9 @@ export type StudentReportRow = {
   testBest: Record<string, { score: number; total: number } | null>;
   practiceDone: number;
   testsDone: number;
+  /** Accepted laboratory works: lab id → accepted. */
+  labs: Record<string, boolean>;
+  labsDone: number;
 };
 
 export const getGroupReport = createServerFn({ method: "GET" })
@@ -379,6 +403,12 @@ export const getGroupReport = createServerFn({ method: "GET" })
       order by tr.user_id, tr.topic, tr.score desc, tr.taken_at desc
     `;
 
+    const labRows = await sql<{ user_id: string; lab_id: string }>`
+      select la.user_id, la.lab_id
+      from lab_accepted la
+      join group_members gm on gm.group_id = ${data.groupId} and gm.user_id = la.user_id
+    `;
+
     const rows: StudentReportRow[] = members.map((m) => {
       const pr: Record<string, number> = {};
       const tb: StudentReportRow["testBest"] = {};
@@ -392,6 +422,9 @@ export const getGroupReport = createServerFn({ method: "GET" })
       for (const t of tests) {
         if (t.user_id === m.user_id && t.topic in tb) tb[t.topic] = { score: t.score, total: t.total };
       }
+      const labs: Record<string, boolean> = {};
+      for (const l of LABS) labs[l.id] = false;
+      for (const r of labRows) if (r.user_id === m.user_id && r.lab_id in labs) labs[r.lab_id] = true;
       return {
         userId: m.user_id,
         fullName: m.full_name,
@@ -400,8 +433,69 @@ export const getGroupReport = createServerFn({ method: "GET" })
         testBest: tb,
         practiceDone: Object.values(pr).reduce((a, b) => a + b, 0),
         testsDone: Object.values(tb).filter(Boolean).length,
+        labs,
+        labsDone: Object.values(labs).filter(Boolean).length,
       };
     });
 
     return { groupName: group[0].name, rows };
+  });
+
+// ── Teacher: lab acceptance and question analytics ───────────────────────
+
+async function requireOwnGroup(sql: Awaited<ReturnType<typeof import("@/lib/db").getSql>>, teacherId: string, groupId: string) {
+  const g = await sql<{ id: string }>`select id from groups where id = ${groupId} and teacher_id = ${teacherId}`;
+  if (!g[0]) throw new Error("Групу не знайдено.");
+}
+
+/** Marks (or unmarks) a laboratory work as accepted for a student of the teacher's group. */
+export const setLabAccepted = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: { groupId: string; userId: string; labId: string; accepted: boolean }) => d)
+  .handler(async ({ context, data }): Promise<{ ok: true }> => {
+    await requireTeacher(context.userId);
+    if (!LAB_BY_ID[data.labId]) throw new Error("Невідома лабораторна.");
+    const { getSql } = await import("@/lib/db");
+    const sql = await getSql();
+    await requireOwnGroup(sql, context.userId, data.groupId);
+    const member = await sql<{ user_id: string }>`
+      select user_id from group_members where group_id = ${data.groupId} and user_id = ${data.userId}
+    `;
+    if (!member[0]) throw new Error("Студента немає в цій групі.");
+    if (data.accepted) {
+      await sql`
+        insert into lab_accepted (user_id, lab_id, accepted_by, accepted_at)
+        values (${data.userId}, ${data.labId}, ${context.userId}, now())
+        on conflict (user_id, lab_id) do update
+          set accepted_by = excluded.accepted_by, accepted_at = now()
+      `;
+    } else {
+      await sql`delete from lab_accepted where user_id = ${data.userId} and lab_id = ${data.labId}`;
+    }
+    return { ok: true };
+  });
+
+export type QuestionStat = { topic: string; qkey: string; n: number; correctN: number };
+
+/** Bank questions the group answers worst (needs at least 3 answers per question). */
+export const getGroupQuestionStats = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((d: { groupId: string }) => d)
+  .handler(async ({ context, data }): Promise<QuestionStat[]> => {
+    await requireTeacher(context.userId);
+    const { getSql } = await import("@/lib/db");
+    const sql = await getSql();
+    await requireOwnGroup(sql, context.userId, data.groupId);
+    const rows = await sql<{ topic: string; qkey: string; n: number; correct_n: number }>`
+      select ta.topic, ta.qkey,
+             count(*)::int as n,
+             sum(case when ta.ok then 1 else 0 end)::int as correct_n
+      from test_answers ta
+      join group_members gm on gm.group_id = ${data.groupId} and gm.user_id = ta.user_id
+      group by ta.topic, ta.qkey
+      having count(*) >= 3
+      order by (sum(case when ta.ok then 1 else 0 end)::float / count(*)) asc, count(*) desc
+      limit 20
+    `;
+    return rows.map((r) => ({ topic: r.topic, qkey: r.qkey, n: r.n, correctN: r.correct_n }));
   });

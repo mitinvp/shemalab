@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { COURSE_TOPICS, MODULES, PRACTICE_SLOTS } from "@/lib/course";
+import { COURSE_TOPICS, LABS, MODULES, PRACTICE_SLOTS } from "@/lib/course";
 import { useMyProgress, useSchoolReady } from "@/lib/school-client";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -109,6 +109,24 @@ function Home() {
           </section>
         ))}
       </div>
+
+      <section className="mt-12">
+        <h2 className="font-display text-xl text-fg">Лабораторні роботи</h2>
+        <p className="mt-1 text-sm text-muted">Кожна лабораторна має персональний варіант для студента.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {LABS.map((l) => (
+            <Link
+              key={l.id}
+              to="/labwork/$labId"
+              params={{ labId: l.id }}
+              className="rounded-xl bg-surface p-4 shadow-[var(--shadow-border)] transition-[box-shadow] duration-[var(--motion-quick)] ease-[var(--ease-out)] hover:shadow-[var(--shadow-border-hover)]"
+            >
+              <p className="font-mono text-xs text-subtle">ЛР № {l.number}</p>
+              <p className="mt-1 font-medium text-fg">{l.title}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
     </AppShell>
   );
 }
